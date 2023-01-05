@@ -1,15 +1,25 @@
-require('dotenv').config(); //initialize dotenv
-const {Client, GatewayIntentBits} = require('discord.js'); //import discord.js
+require('dotenv').config(); 
 require('@tensorflow/tfjs-node');
+const {Client, GatewayIntentBits} = require('discord.js');
 const {responses} = require('./responses')
 const toxicity = require('@tensorflow-models/toxicity');
 const dayjs = require('dayjs')
 
+
+//number representing the threshold at which we consider a tensoflow estimate "toxic". a lower value will be a stricter bot. 
 const threshold = 0.7;
 
+//integer representing the nuisance score at which to start threatening a user with a mute
+const threat_threshold = 2;
+
+//integer representing the nuisance score at which to mute a user, must be greater than threat_threshold
 const mute_threshold = 5;
+
+//integer representing the nuisance score at which to kick a user, must be greater than mute_threshold
 const kick_threshold = 8;
 
+
+//where well hold our data for anyone breaking rules, cause im too lazy to set up DB
 let naughty_list = {};
 let muted_list = {};
 
@@ -24,13 +34,16 @@ const client = new Client({ intents: [
 
 
 client.on('messageCreate', (m) => {
+    //infinite loops are bad
     if (m.author.bot) return false; 
+
     //if user is muted then we oughta delete their message right away ey? 
     if (muted_list[m.author.id]) {
         m.delete();
         return false;
     }
 
+    //run that shit
     checkMessageForToxicity(m.content)
         .then(results => evaluateResults(results))
         .then(categories => checkTheNaughtyList(categories.length, m.author))
@@ -59,12 +72,12 @@ const evaluateResults = (results) => results.map(result => (result.results[0].ma
 
 /**
  * 
- * @param {number} userData a number indicating how much of a pain in the ass a user has been, the higher the more asshole
- * @returns {string} an approproate response
+ * @param {object} nuisanceScore a number representing how much of a pain in the ass our user has been
+ * @returns {array} an approproate response, an action to take
  */
-const getResponse = (userData) => {
-    if (!userData || userData.score === 0) return null
-    let nuisanceScore = userData.score;
+const getResponse = (nuisanceScore) => {
+    if (!nuisanceScore || nuisanceScore === 0) return null
+
     if (nuisanceScore > 0 && nuisanceScore < 2) return [responses[1][_getRandomInt(responses[1].length)], () => {}]
     if (nuisanceScore > 2 && nuisanceScore < mute_threshold) return [responses[2][_getRandomInt(responses[2].length)], () => {}]
     if (nuisanceScore > mute_threshold && nuisanceScore <  kick_threshold) return [responses[3][_getRandomInt(responses[3].length)], muteUser]
@@ -81,9 +94,9 @@ const checkTheNaughtyList = (severity, userId) => {
     console.log('naughty list', naughty_list)
     if (severity === 0) return null;
     if (naughty_list[userId]) {
-        naughty_list[userId].score += severity;
+        naughty_list[userId] += severity;
     } else {
-        naughty_list[userId] = {score: 1, action: null};
+        naughty_list[userId] = 1
     }
 
     return naughty_list[userId];
