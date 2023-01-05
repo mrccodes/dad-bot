@@ -6,8 +6,8 @@ const toxicity = require('@tensorflow-models/toxicity');
 const dayjs = require('dayjs')
 
 
-//number representing the threshold at which we consider a tensoflow estimate "toxic". a lower value will be a stricter bot. 
-const threshold = 0.7;
+//number representing the threshold at which we consider a tensoflow estimate "toxic". a lower value will be a stricter bot (allegedly). 
+const threshold = 0.6;
 
 //integer representing the nuisance score at which to start threatening a user with a mute
 const threat_threshold = 2;
@@ -17,6 +17,12 @@ const mute_threshold = 5;
 
 //integer representing the nuisance score at which to kick a user, must be greater than mute_threshold
 const kick_threshold = 8;
+
+//check for profanity
+const profanity_filter = false;
+
+//milliseconds representing the interval between each time we remove a nuicance point from a user as a way to give users a chance to correct bad behavior, default 24h
+const time_decay_interval = 86400000;
 
 
 //where well hold our data for anyone breaking rules, cause im too lazy to set up DB
@@ -34,7 +40,7 @@ const client = new Client({ intents: [
 
 
 client.on('messageCreate', (m) => {
-    //infinite loops are bad
+    //infinite loops are bad, bots are good
     if (m.author.bot) return false; 
 
     //if user is muted then we oughta delete their message right away ey? 
@@ -43,18 +49,18 @@ client.on('messageCreate', (m) => {
         return false;
     }
 
-    //run that shit
-    checkMessageForToxicity(m.content)
-        .then(results => evaluateResults(results))
-        .then(categories => checkTheNaughtyList(categories.length, m.author))
-        .then(userData => getResponse(userData))
+    
+    checkMessageForToxicity(m.content) //check the message
+        .then(results => evaluateResults(results)) //strip results down to array of flagged categories
+        .then(categories => checkTheNaughtyList(categories.length, m.author)) //check their behavior record and update it 
+        .then(userData => getResponse(userData)) //get an appropriate response and action to take, if any
         .then(response => {
-            console.log('response to send', response)
             if (!response) return null
             let [message, action] = response;
             action(m);
             m.reply(message)
         })
+        .catch(err => console.error("error checking message toxicity", err))
     
 })
 
@@ -63,51 +69,69 @@ client.on('ready', () => {
 });
 
 /**
- * 
+ * Evaluates all the predictions and simply gives back a list of all the triggered categories. 
  * @param {array} results predictions returned from tensorflow toxicity
  * @returns {array}  each of the categories that were flagged as toxic
  */
-const evaluateResults = (results) => results.map(result => (result.results[0].match === true ? result.label : null)).filter(n => n != null)
+const evaluateResults = (results) => {
+    let toxic_tags = results.map(result => (result.results[0].match === true ? result.label : null)).filter(n => n != null);
+    console.log('tags',toxic_tags)
+
+    //if the profanity filter is enabled, we'll strip obscene from the results, and if toxicity was the only other thing, well remove that too.
+    let filtered_tags = profanity_filter ? toxic_tags : toxic_tags.filter(t => t !== 'obscene');
+    if (!profanity_filter && filtered_tags.length === 1 && filtered_tags.includes('toxicity')) return []
+    return filtered_tags;
+}
 
 
 /**
- * 
- * @param {object} nuisanceScore a number representing how much of a pain in the ass our user has been
- * @returns {array} an approproate response, an action to take
+ * Generates an appropriate response to send back to the user and an action to take on them if theyve been real naughty
+ * @param {object} nuisanceScore a number representing how much of a pain in the ass our user has been. 
+ * @returns { array } an array containing approproate response and an action to take
  */
 const getResponse = (nuisanceScore) => {
     if (!nuisanceScore || nuisanceScore === 0) return null
+    console.log('nuisanceScore', nuisanceScore)
 
-    if (nuisanceScore > 0 && nuisanceScore < 2) return [responses[1][_getRandomInt(responses[1].length)], () => {}]
-    if (nuisanceScore > 2 && nuisanceScore < mute_threshold) return [responses[2][_getRandomInt(responses[2].length)], () => {}]
-    if (nuisanceScore > mute_threshold && nuisanceScore <  kick_threshold) return [responses[3][_getRandomInt(responses[3].length)], muteUser]
-    if (nuisanceScore > kick_threshold) return [responses[4][_getRandomInt(responses[4].length)], kickUser]
+    if (nuisanceScore > 0 && nuisanceScore < threat_threshold) return [responses[1][_getRandomInt(responses[1].length)], () => {}]
+    if (nuisanceScore >= threat_threshold && nuisanceScore < mute_threshold) return [responses[2][_getRandomInt(responses[2].length)], () => {}]
+    if (nuisanceScore >= mute_threshold && nuisanceScore <  kick_threshold) return [responses[3][_getRandomInt(responses[3].length)], muteUser]
+    if (nuisanceScore >= kick_threshold) return [responses[4][_getRandomInt(responses[4].length)], kickUser]
 }
 
 /**
- * 
- * @param {number} severity - severety of the toxicity obvserved
- * @param {string} userId - user object
- * @returns 
+ * Adds our naughty user to the naughty list and/or updates their nuisance score.
+ * @param { number } severity - severety of the toxicity obvserved. Based off the number of different categories in which the message was deemed toxic
+ * @param { string } userId - user object
+ * @returns { uid } user id
  */
 const checkTheNaughtyList = (severity, userId) => {
-    console.log('naughty list', naughty_list)
     if (severity === 0) return null;
     if (naughty_list[userId]) {
         naughty_list[userId] += severity;
     } else {
-        naughty_list[userId] = 1
+        naughty_list[userId] = severity;
     }
 
     return naughty_list[userId];
 }
 
-//kicks a user
+/**
+ * Kicks a user and deleted them from our lists.
+ * @param {object} message - discord message object
+ */
 const kickUser = (message) => {
-    message.member && message.member.kick({
-            reason: "Toxicity"
-        })
-    console.log('kicked user', message.author.id)
+    let uid = message.author.id
+    message.member && message.member.kick({ reason: "Toxicity" })
+    .then((_) => {
+        console.log('kicked user', uid)
+        if (naughty_list[uid]) {
+            delete naughty_list[uid]
+        }
+        if (muted_list[ud]) {
+            delete muted_list[uid]
+        }
+    })
 }
 
 /**
@@ -128,7 +152,11 @@ const muteUser = (message) => {
 }
 
 
-
+/**
+ * 
+ * @param {object} message - discord message object 
+ * @returns {predictions[]} discord predictions array
+ */
 const checkMessageForToxicity = async (message) => {
     return toxicity.load(threshold).then(async (model) => {
         return model.classify(message).then(predictions => {
@@ -137,7 +165,9 @@ const checkMessageForToxicity = async (message) => {
       });
 }
 
-//every 24 hours remove 1 nuisance point from each user to give them a fighting chance to not get kicked
+/**
+ * remove 1 nuisance point from each user to give them a fighting chance to not get kicked on a set interval
+ */
 const _timeDecay = setInterval(() => {
     Object.keys(naughty_list).forEach(k => {
         if (naughty_list[k].score && naughty_list[k].score > 0) {
@@ -147,12 +177,12 @@ const _timeDecay = setInterval(() => {
         } 
     })
     console.log('user nuisance scores reduced', naughty_list)
-}, 86400000)
+}, time_decay_interval)
 
 const _getRandomInt = ( max) => {
     return Math.floor(Math.random() * max);
   }
   
 
-//make sure this line is the last line
+
 client.login(process.env.CLIENT_TOKEN); //login bot using token
