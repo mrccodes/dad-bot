@@ -3,6 +3,7 @@ const {Client, GatewayIntentBits} = require('discord.js'); //import discord.js
 require('@tensorflow/tfjs-node');
 const {responses} = require('./responses')
 const toxicity = require('@tensorflow-models/toxicity');
+const dayjs = require('dayjs')
 
 const threshold = 0.7;
 
@@ -24,7 +25,6 @@ const client = new Client({ intents: [
 
 client.on('messageCreate', (m) => {
     if (m.author.bot) return false; 
-
     //if user is muted then we oughta delete their message right away ey? 
     if (muted_list[m.author.id]) {
         m.delete();
@@ -39,7 +39,7 @@ client.on('messageCreate', (m) => {
             console.log('response to send', response)
             if (!response) return null
             let [message, action] = response;
-            action(m.author);
+            action(m);
             m.reply(message)
         })
     
@@ -90,29 +90,29 @@ const checkTheNaughtyList = (severity, userId) => {
 }
 
 //kicks a user
-const kickUser = (user) => {
-    user.kick({
-        reason: "Toxicity"
-    })
-    console.log('kicked user', user.id)
+const kickUser = (message) => {
+    message.member && message.member.kick({
+            reason: "Toxicity"
+        })
+    console.log('kicked user', message.author.id)
 }
 
-//mutes a user
-const muteUser = (user) => {
-    muted_list[user.id] = 1;
+/**
+ * adds a user to the mute list, and unmutes them after 10 minutes
+ * @param {object} message - discord message object
+ */
+const muteUser = (message) => {
+    const uid = message.author.id;
+    //add user to object with value of unmute date
+    muted_list[uid] = dayjs(new Date()).add(10, 'm').toString();
     setTimeout(() => {
-        console.log('callback called')
-        console.log(muted_list, user.id)
-        if (muted_list[user.id]) {
-            delete muted_list[user.id]
-            console.log('unmuted user', user.id)
+        if (muted_list[uid] && dayjs(muted_list[uid]).diff(new Date(), 'minute') >= 10) {
+            delete muted_list[uid]
+            console.log('unmuted user', uid)
         }
-    }, 3600000)
-    console.log('muted user', user.id)
+    }, 600010)
+    console.log('muted user', uid)
 }
-
-
-
 
 
 
@@ -124,8 +124,8 @@ const checkMessageForToxicity = async (message) => {
       });
 }
 
-//every 24h minutes remove 1 nuisance point from each user to give them a fighting chance to not get kicked
-const timeDecay = setInterval(() => {
+//every 24 hours remove 1 nuisance point from each user to give them a fighting chance to not get kicked
+const _timeDecay = setInterval(() => {
     Object.keys(naughty_list).forEach(k => {
         if (naughty_list[k].score && naughty_list[k].score > 0) {
             naughty_list[k].score--
