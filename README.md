@@ -4,16 +4,17 @@ A discord bot whom gets feisty when users are being rude.
 
 ## Description
 
-Discord bot build with Node that uses a Tensorflow Toxicity model to determin the toxicity of message and responds accordingly. 
+Discord bot build with Node that uses a Tensorflow Toxicity model to determine the toxicity of message and responds accordingly. 
 
 ## Getting Started
 
 ### Dependencies
 
 * Node v19.*
-* `flyctl` (if hosting with included host file) [Fly.io](https://fly.io/)
-* Fly.io account
 * Discord account 
+* `flyctl` (if hosting with included host file) [Fly.io](https://fly.io/)
+* Fly.io account(if hosting with included host file)
+
 
 ### Installing
 
