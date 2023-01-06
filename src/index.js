@@ -153,7 +153,7 @@ const muteUser = (message) => {
 
 
 /**
- * 
+ * Uses tensorflow toxicity model to determine toxicty of text
  * @param {object} message - discord message object 
  * @returns {predictions[]} discord predictions array
  */
