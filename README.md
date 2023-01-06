@@ -39,12 +39,21 @@ npm start
 #### Host bot on Fly.io
 
 * Create Fly.io and install `flyctl` command
+* add a `.env` file to the root directory with your discord bot token:
+``` 
+CLIENT_TOKEN=<DISCORD_BOT_TOKEN>
+```
 * from the project directory run:
 ```
-flyctl launch -e CLIENT_TOKEN=<DISCORD_BOT_TOKEN>
+flyctl launch 
 ```
 * answer the prompts
     * yes to copying configuration from included `fly.toml`
     * No to databse prompts
-    * Yes to deploy immediately prompt
+    * No to deploy immediately prompt
+* import discord bot token to Fly and deploy
+```
+cat .env | flyctl secrets import
+flyctl deploy
+```
 
