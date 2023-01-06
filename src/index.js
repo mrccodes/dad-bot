@@ -49,16 +49,27 @@ client.on('messageCreate', (m) => {
         return false;
     }
 
-    
+    let r = {}
     checkMessageForToxicity(m.content) //check the message
         .then(results => evaluateResults(results)) //strip results down to array of flagged categories
-        .then(categories => checkTheNaughtyList(categories.length, m.author)) //check their behavior record and update it 
-        .then(userData => getResponse(userData)) //get an appropriate response and action to take, if any
+        .then(categories => {
+            r.toxicityResults = categories;
+            //check their behavior record and update it 
+            return checkTheNaughtyList(categories.length, m.author)
+        })
+        .then(userNuisanceScore => {
+            //get an appropriate response and action to take, if any
+            r.userNuisanceScore = userNuisanceScore;
+            return getResponse(userNuisanceScore)
+        })
         .then(response => {
             if (!response) return null
             let [message, action] = response;
-            action(m);
+            let actionResult = action(m);
             m.reply(message)
+            r.action = actionResult ?? null;
+            r.messageContent = m.content;
+            console.log(r);
         })
         .catch(err => console.error("error checking message toxicity", err))
     
@@ -75,7 +86,6 @@ client.on('ready', () => {
  */
 const evaluateResults = (results) => {
     let toxic_tags = results.map(result => (result.results[0].match === true ? result.label : null)).filter(n => n != null);
-    console.log('tags',toxic_tags)
 
     //if the profanity filter is enabled, we'll strip obscene from the results, and if toxicity was the only other thing, well remove that too.
     let filtered_tags = profanity_filter ? toxic_tags : toxic_tags.filter(t => t !== 'obscene');
@@ -91,7 +101,6 @@ const evaluateResults = (results) => {
  */
 const getResponse = (nuisanceScore) => {
     if (!nuisanceScore || nuisanceScore === 0) return null
-    console.log('nuisanceScore', nuisanceScore)
 
     if (nuisanceScore > 0 && nuisanceScore < threat_threshold) return [responses[1][_getRandomInt(responses[1].length)], () => {}]
     if (nuisanceScore >= threat_threshold && nuisanceScore < mute_threshold) return [responses[2][_getRandomInt(responses[2].length)], () => {}]
@@ -103,7 +112,7 @@ const getResponse = (nuisanceScore) => {
  * Adds our naughty user to the naughty list and/or updates their nuisance score.
  * @param { number } severity - severety of the toxicity obvserved. Based off the number of different categories in which the message was deemed toxic
  * @param { string } userId - user object
- * @returns { uid } user id
+ * @returns { number } user nuisance score
  */
 const checkTheNaughtyList = (severity, userId) => {
     if (severity === 0) return null;
@@ -132,6 +141,7 @@ const kickUser = (message) => {
             delete muted_list[uid]
         }
     })
+    return `Kick user ${uid}`
 }
 
 /**
@@ -149,6 +159,7 @@ const muteUser = (message) => {
         }
     }, 600010)
     console.log('muted user', uid)
+    return `Mute user ${uid}`
 }
 
 
