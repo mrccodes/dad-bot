@@ -41,23 +41,22 @@ const client = new Client({ intents: [
 
 
 client.on('messageCreate', (m) => {
-    //infinite loops are bad, bots are good
-    if (m.author.bot) return false; 
+    if (m.author.bot) return false; //infinite loops are bad, bots are good
     let r = { messageContent: m.content } //result object for logging purposes
 
     const guildId = m.guild.id;
     const userId = m.author.id;
-    //if user is muted then we oughta delete their message right away ey? 
+    //delete message if user is muted in guild
     if (muted_list[guildId] && muted_list[guildId][userId]) {
         m.delete();
         return false;
     }
 
-    checkMessageForToxicity(m.content) //check the message
+    checkMessageForToxicity(m.content) 
         .then(results => evaluateResults(results)) //strip results down to array of flagged categories
         .then(categories => {
             r.toxicityResults = categories;
-            //check their behavior record and update it 
+            //check user behavior record and update it 
             return checkTheNaughtyList(categories.length, userId, guildId)
         })
         .then(userNuisanceScore => {
