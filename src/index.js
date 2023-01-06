@@ -7,7 +7,7 @@ const dayjs = require('dayjs')
 
 
 //number representing the threshold at which we consider a tensoflow estimate "toxic". a lower value will be a stricter bot (allegedly). 
-const threshold = 0.6;
+const threshold = 0.8;
 
 //integer representing the nuisance score at which to start threatening a user with a mute
 const threat_threshold = 2;
@@ -63,12 +63,16 @@ client.on('messageCreate', (m) => {
             return getResponse(userNuisanceScore)
         })
         .then(response => {
-            if (!response) return null
+            r.messageContent = m.content;
+            if (!response) {
+                r.action = null;
+                console.log(r);
+                return null
+            }
             let [message, action] = response;
             let actionResult = action(m);
             m.reply(message)
             r.action = actionResult ?? null;
-            r.messageContent = m.content;
             console.log(r);
         })
         .catch(err => console.error("error checking message toxicity", err))
