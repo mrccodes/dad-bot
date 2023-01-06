@@ -57,3 +57,9 @@ cat .env | flyctl secrets import
 flyctl deploy
 ```
 
+## Help
+
+Tensorflow seems to use a ton of RAM so chances are you will need to increase your RAM on your Fly VM. I would recommend starting with 1GB.
+[Docs](https://fly.io/docs/flyctl/scale-memory/)
+
+
