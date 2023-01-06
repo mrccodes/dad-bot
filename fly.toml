@@ -1,4 +1,4 @@
-# fly.toml file generated for dad-bot on 2023-01-05T17:18:12-08:00
+# fly.toml file generated for dad-bot on 2023-01-05T17:56:17-08:00
 
 app = "dad-bot"
 kill_signal = "SIGINT"

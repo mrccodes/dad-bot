@@ -7,7 +7,8 @@ const dayjs = require('dayjs')
 
 
 //number representing the threshold at which we consider a tensoflow estimate "toxic". a lower value will be a stricter bot (allegedly). 
-const threshold = 0.8;
+// 0.7 seems to work best when profanity filter is off, to avoid flagging profanity as insults also. 
+const threshold = 0.7;
 
 //integer representing the nuisance score at which to start threatening a user with a mute
 const threat_threshold = 2;
@@ -42,20 +43,22 @@ const client = new Client({ intents: [
 client.on('messageCreate', (m) => {
     //infinite loops are bad, bots are good
     if (m.author.bot) return false; 
+    let r = { messageContent: m.content } //result object for logging purposes
 
+    const guildId = m.guild.id;
+    const userId = m.author.id;
     //if user is muted then we oughta delete their message right away ey? 
-    if (muted_list[m.author.id]) {
+    if (muted_list[guildId] && muted_list[guildId][userId]) {
         m.delete();
         return false;
     }
 
-    let r = {}
     checkMessageForToxicity(m.content) //check the message
         .then(results => evaluateResults(results)) //strip results down to array of flagged categories
         .then(categories => {
             r.toxicityResults = categories;
             //check their behavior record and update it 
-            return checkTheNaughtyList(categories.length, m.author)
+            return checkTheNaughtyList(categories.length, userId, guildId)
         })
         .then(userNuisanceScore => {
             //get an appropriate response and action to take, if any
@@ -63,7 +66,6 @@ client.on('messageCreate', (m) => {
             return getResponse(userNuisanceScore)
         })
         .then(response => {
-            r.messageContent = m.content;
             if (!response) {
                 r.action = null;
                 console.log(r);
@@ -115,18 +117,23 @@ const getResponse = (nuisanceScore) => {
 /**
  * Adds our naughty user to the naughty list and/or updates their nuisance score.
  * @param { number } severity - severety of the toxicity obvserved. Based off the number of different categories in which the message was deemed toxic
- * @param { string } userId - user object
+ * @param { string } userId - user id
+ * @param { string } guildId - the guild in which the message was sent
  * @returns { number } user nuisance score
  */
-const checkTheNaughtyList = (severity, userId) => {
-    if (severity === 0) return null;
-    if (naughty_list[userId]) {
-        naughty_list[userId] += severity;
-    } else {
-        naughty_list[userId] = severity;
+const checkTheNaughtyList = (severity, userId, guildId) => {
+    if (!naughty_list[guildId]) {
+        naughty_list[guildId] = {};
     }
 
-    return naughty_list[userId];
+    if (severity === 0) return null;
+    if (naughty_list[guildId][userId]) {
+        naughty_list[guildId][userId] += severity;
+    } else {
+        naughty_list[guildId][userId] = severity;
+    }
+
+    return naughty_list[guildId][userId];
 }
 
 /**
@@ -154,16 +161,22 @@ const kickUser = (message) => {
  */
 const muteUser = (message) => {
     const uid = message.author.id;
+    const guildId = message.guild.id;
+
+    if (!muted_list[guildId]) {
+        muted_list[guildId] = {};
+    }
+
     //add user to object with value of unmute date
-    muted_list[uid] = dayjs(new Date()).add(10, 'm').toString();
+    muted_list[guildId][uid] = dayjs(new Date()).add(10, 'm').toString();
     setTimeout(() => {
-        if (muted_list[uid] && dayjs(muted_list[uid]).diff(new Date(), 'minute') >= 10) {
-            delete muted_list[uid]
+        if (muted_list[guildId][uid] && dayjs(muted_list[guildId][uid]).diff(new Date(), 'minute') >= 10) {
+            delete muted_list[guildId][uid]
             console.log('unmuted user', uid)
         }
     }, 600010)
-    console.log('muted user', uid)
-    return `Mute user ${uid}`
+    console.log('muted user', uid, 'guild', guildId)
+    return `Mute user ${uid} in guild ${guildId}`
 }
 
 
