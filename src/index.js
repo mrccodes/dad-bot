@@ -1,9 +1,12 @@
 require('dotenv').config(); 
 require('@tensorflow/tfjs-node');
-const {Client, GatewayIntentBits} = require('discord.js');
+const {Client, GatewayIntentBits, Collection, Events} = require('discord.js');
 const {responses} = require('./responses')
 const toxicity = require('@tensorflow-models/toxicity');
-const dayjs = require('dayjs')
+const fs = require('node:fs');
+const path = require('node:path');
+const {muted_list, naughty_list} = require('./data');
+const { muteUser } = require('./utils');
 
 
 //number representing the threshold at which we consider a tensoflow estimate "toxic". a lower value will be a stricter bot (allegedly). 
@@ -26,9 +29,7 @@ const profanity_filter = false;
 const time_decay_interval = 86400000;
 
 
-//where well hold our data for anyone breaking rules, cause im too lazy to set up DB
-let naughty_list = {};
-let muted_list = {};
+
 
 //create new client
 const client = new Client({ intents: [
@@ -38,6 +39,41 @@ const client = new Client({ intents: [
     GatewayIntentBits.GuildMembers,
 
 ] });
+
+client.commands = new Collection();
+
+const commandsPath = path.join(__dirname, 'commands');
+const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
+
+for (const file of commandFiles) {
+	const filePath = path.join(commandsPath, file);
+	const command = require(filePath);
+
+	// Set a new item in the Collection with the key as the command name and the value as the exported module
+	if ('data' in command && 'execute' in command) {
+		client.commands.set(command.data.name, command);
+	} else {
+		console.log(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`);
+	}
+}
+
+client.on(Events.InteractionCreate, async interaction => {
+	if (!interaction.isChatInputCommand()) return;
+
+    const command = interaction.client.commands.get(interaction.commandName);
+
+	if (!command) {
+		console.error(`No command matching ${interaction.commandName} was found.`);
+		return;
+	}
+
+	try {
+		await command.execute(interaction);
+	} catch (error) {
+		console.error(error);
+		await interaction.reply({ content: 'There was an error while executing this command!', ephemeral: true });
+	}
+});
 
 
 client.on('messageCreate', (m) => {
@@ -71,7 +107,7 @@ client.on('messageCreate', (m) => {
                 return null
             }
             let [message, action] = response;
-            let actionResult = action(m);
+            let actionResult = action(m.guild.id ,m.author.id ,m);
             m.reply(message)
             r.action = actionResult ?? null;
             console.log(r);
@@ -139,7 +175,7 @@ const checkTheNaughtyList = (severity, userId, guildId) => {
  * Kicks a user and deleted them from our lists.
  * @param {object} message - discord message object
  */
-const kickUser = (message) => {
+const kickUser = (_, __, message) => {
     let uid = message.author.id
     message.member && message.member.kick({ reason: "Toxicity" })
     .then((_) => {
@@ -147,36 +183,14 @@ const kickUser = (message) => {
         if (naughty_list[uid]) {
             delete naughty_list[uid]
         }
-        if (muted_list[ud]) {
-            delete muted_list[uid]
+        if (muted_list[message.guild.id][uid]) {
+            delete muted_list[message.guild.id][uid]
         }
     })
     return `Kick user ${uid}`
 }
 
-/**
- * adds a user to the mute list, and unmutes them after 10 minutes
- * @param {object} message - discord message object
- */
-const muteUser = (message) => {
-    const uid = message.author.id;
-    const guildId = message.guild.id;
 
-    if (!muted_list[guildId]) {
-        muted_list[guildId] = {};
-    }
-
-    //add user to object with value of unmute date
-    muted_list[guildId][uid] = dayjs(new Date()).add(10, 'm').toString();
-    setTimeout(() => {
-        if (muted_list[guildId][uid] && dayjs(muted_list[guildId][uid]).diff(new Date(), 'minute') >= 10) {
-            delete muted_list[guildId][uid]
-            console.log('unmuted user', uid)
-        }
-    }, 600010)
-    console.log('muted user', uid, 'guild', guildId)
-    return `Mute user ${uid} in guild ${guildId}`
-}
 
 
 /**
@@ -213,3 +227,9 @@ const _getRandomInt = ( max) => {
 
 
 client.login(process.env.CLIENT_TOKEN); //login bot using token
+
+
+module.exports = {
+    muted_list,
+    naughty_list
+}
